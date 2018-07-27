@@ -1,3 +1,7 @@
+# Installation
+
+I personally use the conda distribution of python. This file will only requrie the installation of 2 packages: pandas and folium. To install on conda, use the command "conda install pandas" and "conda install folium"
+
 # argo_traj_box
 
 This program will download argo trajectory data from the Gdac meta file and plot it. It will show all trajectories that pass through a given box. 
