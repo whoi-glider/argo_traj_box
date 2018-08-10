@@ -20,7 +20,8 @@ parser.add_argument("--recompile", help="downloads and recompiles the trajectory
                     action="store_true")
 parser.add_argument("--markers", help="shows the deployment and end transmission locations of all argo floats",
 					action="store_true")
-
+parser.add_argument("--full_traj", help="shows the full trajectory of the float from deployment to last transmission",
+					action="store_true")
 
 
 def wrap_lon180(lon):
@@ -38,12 +39,13 @@ def wrap_lon360(lon):
 
 def plot_the_cruises(df_):
 	colorlist = ['red', 'blue', 'green', 'purple', 'orange', 'darkred',
-                  'lightred', 'beige', 'darkblue', 'darkgreen', 'cadetblue',
+                  'lightred', 'darkblue', 'darkgreen', 'cadetblue',
                   'darkpurple', 'pink', 'lightgreen',
                   'gray']
 	color=cycle(colorlist)
 	map=folium.Map(location=[0,0],zoom_start=2,tiles='Mapbox bright')
 	marker_cluster = folium.plugins.MarkerCluster().add_to(map)
+	df_box = pd.DataFrame({})
 	for cruise in df_['Cruise'].unique():
 		c = next(color)
 		df_holder = df_[df_.Cruise==cruise]
@@ -53,11 +55,18 @@ def plot_the_cruises(df_):
 		for g in df_holder.groupby('wrap').groups:
 			frame = df_holder.groupby('wrap').get_group(g)
 			points = [tuple(dummy) for dummy in frame[['latitude','longitude']].values]
-			folium.PolyLine(points, color=c, weight=1, opacity=0.7,popup='WMO ID # %s' %cruise).add_to(map)
-		if args.markers:
-			folium.Marker(tuple(df_holder[['latitude','longitude']].values[0]),popup='WMO ID # %s Deployed' %cruise, icon = folium.Icon(color=c)).add_to(marker_cluster)
+			if cruise == 'BOX':
+				folium.PolyLine(points, color='black', weight=7, opacity=1).add_to(map)
+				if df_holder['wrap'].sum()>0:
+					folium.PolyLine([(urlat,lllon),(urlat,180)], color='black', weight=7, opacity=1).add_to(map)
+					folium.PolyLine([(urlat,-180),(urlat,urlon)], color='black', weight=7, opacity=1).add_to(map)
+					folium.PolyLine([(lllat,urlon),(lllat,-180)], color='black', weight=7, opacity=1).add_to(map)
+					folium.PolyLine([(lllat,180),(lllat,lllon)], color='black', weight=7, opacity=1).add_to(map)
+			else:
+				folium.PolyLine(points, color=c, weight=1, opacity=0.7).add_to(map)
+		if (args.markers)&(cruise!='BOX'):
+			folium.Marker(tuple(df_holder[['latitude','longitude']].values[0]),popup='WMO ID # %s First Transmission' %cruise, icon = folium.Icon(color=c)).add_to(marker_cluster)
 			folium.Marker(tuple(df_holder[['latitude','longitude']].values[-1]),popup='WMO ID # %s Last Transmission' %cruise, icon = folium.Icon(color=c)).add_to(marker_cluster)
-	folium.PolyLine([(lllat,lllon),(urlat,lllon),(urlat,urlon),(lllat,urlon),(lllat,lllon)],popup='Bounding Box', color='black', weight=7, opacity=1).add_to(map)
 	map.save(outfile='map.html')
 	os.system('open map.html')
 
@@ -99,6 +108,7 @@ lllon = args.lllon
 lllat = args.lllat
 urlon = args.urlon
 urlat = args.urlat
+df = pd.concat([df,pd.DataFrame({'Cruise':'BOX','latitude':[lllat,urlat,urlat,lllat,lllat],'longitude':[lllon,lllon,urlon,urlon,lllon]})])
 
 if urlon<lllon:
 	df['longitude']=wrap_lon360(df['longitude'].values)
@@ -106,6 +116,7 @@ if urlon<lllon:
 	lllon = wrap_lon360(lllon)[0]
 
 assert lllat<urlat, "lllat must be less than urlat"
+assert lllon<urlon, "lllon must be less than urllon"
 assert lllat!=urlat, "The latitudes cannot be the same"
 assert lllon!=urlon, "The longitudes cannot be the same"
 assert (abs(urlon-lllon)<180)|(abs(wrap_lon360(urlon)[0]-lllon)<180), "the box can only be 180 degrees big"
@@ -115,13 +126,20 @@ if urlon<lllon:
 	urlon = wrap_lon360(urlon)[0]
 	lllon = wrap_lon360(lllon)[0]
 
-df_holder = df[(df.latitude>lllat)&(df.latitude<urlat)]
-cruise_list = df_holder[(df_holder.longitude<urlon)&(df_holder.longitude>lllon)].Cruise.unique()
+df_holder = df[(df.latitude>=lllat)&(df.latitude<=urlat)]
+cruise_list = df_holder[(df_holder.longitude<=urlon)&(df_holder.longitude>=lllon)].Cruise.unique()
 df = df[df.Cruise.isin(cruise_list)]
-
+if not args.full_traj:
+	print('Only trajectories starting in the box are included in the plots')
+	frames = []
+	for df_holder in [df[df.Cruise==dummy] for dummy in df.Cruise.unique()]:
+		index = df_holder[(df_holder.latitude>=lllat)&(df_holder.latitude<=urlat)&(df_holder.longitude<=urlon)&(df_holder.longitude>=lllon)].index.min()
+		df_holder = df_holder[df_holder.index>=index]
+		frames.append(df_holder)
+	df = pd.concat(frames)
+else:
+	print('Full trajectories are included in the plots')
 df['longitude']=wrap_lon180(df['longitude'].values)
 urlon = wrap_lon180(urlon)[0]
 lllon = wrap_lon180(lllon)[0]
-
-
 plot_the_cruises(df)
