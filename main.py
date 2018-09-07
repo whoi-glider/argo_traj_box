@@ -6,6 +6,10 @@ import folium
 import folium.plugins
 import numpy as np
 from itertools import cycle
+import requests
+
+
+
 
 parser = argparse.ArgumentParser()
 parser.add_argument("lllon", help="lower left longitude of box to plot",
@@ -22,6 +26,15 @@ parser.add_argument("--markers", help="shows the deployment and end transmission
 					action="store_true")
 parser.add_argument("--full_traj", help="shows the full trajectory of the float from deployment to last transmission",
 					action="store_true")
+parser.add_argument("--SOCCOM", help="shows only the SOCCOM floats in the map",
+					action="store_true")
+parser.add_argument("--line", help="shows only the SOCCOM floats in the map",
+					action="store_true")
+parser.add_argument("--dots", help="shows only the SOCCOM floats in the map",
+					action="store_true")
+parser.add_argument("--box", help="shows only the SOCCOM floats in the map",
+					action="store_true")
+
 
 
 def wrap_lon180(lon):
@@ -55,22 +68,34 @@ def plot_the_cruises(df_):
 		for g in df_holder.groupby('wrap').groups:
 			frame = df_holder.groupby('wrap').get_group(g)
 			points = [tuple(dummy) for dummy in frame[['latitude','longitude']].values]
-			if cruise == 'BOX':
+			if (args.box)&(cruise=='BOX'):
 				folium.PolyLine(points, color='black', weight=7, opacity=1).add_to(map)
 				if df_holder['wrap'].sum()>0:
 					folium.PolyLine([(urlat,lllon),(urlat,180)], color='black', weight=7, opacity=1).add_to(map)
 					folium.PolyLine([(urlat,-180),(urlat,urlon)], color='black', weight=7, opacity=1).add_to(map)
 					folium.PolyLine([(lllat,urlon),(lllat,-180)], color='black', weight=7, opacity=1).add_to(map)
 					folium.PolyLine([(lllat,180),(lllat,lllon)], color='black', weight=7, opacity=1).add_to(map)
-			else:
+			elif (args.line)&(cruise!='BOX'):
 				folium.PolyLine(points, color=c, weight=1, opacity=0.7).add_to(map)
-		if (args.markers)&(cruise!='BOX'):
-			folium.Marker(tuple(df_holder[['latitude','longitude']].values[0]),popup='WMO ID # %s First Transmission' %cruise, icon = folium.Icon(color=c)).add_to(marker_cluster)
-			folium.Marker(tuple(df_holder[['latitude','longitude']].values[-1]),popup='WMO ID # %s Last Transmission' %cruise, icon = folium.Icon(color=c)).add_to(marker_cluster)
+			elif (args.markers)&(cruise!='BOX'):
+				folium.Marker(tuple(df_holder[['latitude','longitude']].values[0]),popup='WMO ID # %s First Transmission' %cruise, icon = folium.Icon(color=c)).add_to(marker_cluster)
+				folium.Marker(tuple(df_holder[['latitude','longitude']].values[-1]),popup='WMO ID # %s Last Transmission' %cruise, icon = folium.Icon(color=c)).add_to(marker_cluster)
+			elif (args.dots)&(cruise!='BOX'):
+				for ii in range(len(df_token)):
+					folium.features.Circle(tuple(df_token[['latitude','longitude']].values[ii]), color=c).add_to(marker_cluster)
+
+
 	map.save(outfile='map.html')
 	os.system('open map.html')
 
+
 def download_meta_file_and_compile_df():
+	url = 'http://soccom.ucsd.edu/floats/SOCCOM_float_stats.html'
+	html = requests.get(url).content  
+	df_list = pd.read_html(html) 
+	wmoID_list = df_list[-1]['TrajdataWMOID'].values
+	wmoID_list = [str(dummy) for dummy in wmoID_list]
+
 	link = 'usgodae.org'
 	ftp = FTP(link) 
 	ftp.login()
@@ -86,6 +111,7 @@ def download_meta_file_and_compile_df():
 	df_ = df_[df_.longitude!=99999]
 	df_ = df_[df_.longitude!=-999]
 	df_ = df_[df_.longitude<=180]
+	df_['SOCCOM'] = df_.Cruise.isin(wmoID_list)
 	assert df_.longitude.min()>-180
 	assert df_.longitude.max()<=180
 	assert df_.latitude.min()>-90
@@ -108,7 +134,7 @@ lllon = args.lllon
 lllat = args.lllat
 urlon = args.urlon
 urlat = args.urlat
-df = pd.concat([df,pd.DataFrame({'Cruise':'BOX','latitude':[lllat,urlat,urlat,lllat,lllat],'longitude':[lllon,lllon,urlon,urlon,lllon]})])
+df = pd.concat([df,pd.DataFrame({'Cruise':'BOX','latitude':[lllat,urlat,urlat,lllat,lllat],'longitude':[lllon,lllon,urlon,urlon,lllon],'SOCCOM':[True,True,True,True,True]})])
 
 if urlon<lllon:
 	df['longitude']=wrap_lon360(df['longitude'].values)
@@ -129,6 +155,11 @@ if urlon<lllon:
 df_holder = df[(df.latitude>=lllat)&(df.latitude<=urlat)]
 cruise_list = df_holder[(df_holder.longitude<=urlon)&(df_holder.longitude>=lllon)].Cruise.unique()
 df = df[df.Cruise.isin(cruise_list)]
+
+if args.SOCCOM:
+	print('Only SOCCOM trajectories will be plotted')
+	df = df[df.SOCCOM==True]
+
 if not args.full_traj:
 	print('Only trajectories starting in the box are included in the plots')
 	frames = []
