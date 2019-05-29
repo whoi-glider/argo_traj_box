@@ -7,9 +7,7 @@ import folium.plugins
 import numpy as np
 from itertools import cycle
 import requests
-
-
-
+import json
 
 parser = argparse.ArgumentParser()
 parser.add_argument("lllon", help="lower left longitude of box to plot",
@@ -56,7 +54,11 @@ def plot_the_cruises(df_):
                   'darkpurple', 'pink', 'lightgreen',
                   'gray']
 	color=cycle(colorlist)
-	map=folium.Map(location=[0,0],zoom_start=2,tiles='Mapbox bright')
+	url = 'https://server.arcgisonline.com/arcgis/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}'
+	map=folium.Map(location=[0,0],zoom_start=2)
+
+	folium.TileLayer(tiles=url, attr='World_Ocean_Base').add_to(map)
+
 	marker_cluster = folium.plugins.MarkerCluster().add_to(map)
 	df_box = pd.DataFrame({})
 	for cruise in df_['Cruise'].unique():
@@ -84,7 +86,29 @@ def plot_the_cruises(df_):
 				for ii in range(len(df_token)):
 					folium.features.Circle(tuple(df_token[['latitude','longitude']].values[ii]), color=c).add_to(marker_cluster)
 
+	# url = 'https://raw.githubusercontent.com/python-visualization/folium/master/examples/data'
+	# antarctic_ice_edge = f'{url}/antarctic_ice_edge.json'
+	# antarctic_ice_shelf_topo = f'{url}/antarctic_ice_shelf_topo.json'
 
+	# folium.GeoJson(
+	#     antarctic_ice_edge,
+	#     name='geojson'
+	# ).add_to(map)
+
+	# folium.TopoJson(
+	#     json.loads(requests.get(antarctic_ice_shelf_topo).text),
+	#     'objects.antarctic_ice_shelf',
+	#     name='topojson'
+	# ).add_to(map)
+
+	# url = 'https://coastwatch.pfeg.noaa.gov/erddap/griddap/etopo180.json?altitude%5B(-90.0):(90.0)%5D%5B(-180.0):(180.0)%5D&.draw=surface&.vars=longitude%7Clatitude%7Caltitude&.colorBar=%7C%7C%7C%7C%7C&.bgColor=0xffccccff'
+	# folium.GeoJson(
+	#     url,
+	#     name='test'
+	# ).add_to(map)
+
+
+	# folium.LayerControl().add_to(map)
 	map.save(outfile='map.html')
 	os.system('open map.html')
 
@@ -106,8 +130,12 @@ def download_meta_file_and_compile_df():
 	file.close()
 	ftp.close()
 	df_ = pd.read_csv(filename,skiprows=8)
+	df_ = df_.dropna(subset=['date'])
+	df_['date'] = [int(_) for _ in df_.date.values]
+	df_['date'] = pd.to_datetime(df_.date,format='%Y%m%d%H%M%S')
 	df_['Cruise'] = [dummy.split('/')[1] for dummy in df_['file'].values]
-	df_ = df_[['Cruise','latitude','longitude']]
+	df_ = df_[['Cruise','date','latitude','longitude']]
+	df_ = df_.sort_values(by=['Cruise','date'])
 	df_ = df_[df_.longitude!=99999]
 	df_ = df_[df_.longitude!=-999]
 	df_ = df_[df_.longitude<=180]
@@ -173,4 +201,5 @@ else:
 df['longitude']=wrap_lon180(df['longitude'].values)
 urlon = wrap_lon180(urlon)[0]
 lllon = wrap_lon180(lllon)[0]
+print(df)
 plot_the_cruises(df)
