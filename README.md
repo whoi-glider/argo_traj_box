@@ -12,4 +12,6 @@ The coordinates of the box you wish to plot are defined in the arguments of the 
 
 The flag --markers will show the deployment and last transmission locations of all floats which pass through the box. 
 
+New flag "years" will now show a set number of years beyond when the float first entered the box. e.g. "python main.py -20 -50 -10 -40 --years .1 --box --line" The number of years is a float and need not be integer.
+
 That is all. Carry on. 

@@ -8,6 +8,7 @@ import numpy as np
 from itertools import cycle
 import requests
 import json
+import datetime
 
 parser = argparse.ArgumentParser()
 parser.add_argument("lllon", help="lower left longitude of box to plot",
@@ -26,12 +27,18 @@ parser.add_argument("--full_traj", help="shows the full trajectory of the float 
 					action="store_true")
 parser.add_argument("--SOCCOM", help="shows only the SOCCOM floats in the map",
 					action="store_true")
-parser.add_argument("--line", help="shows only the SOCCOM floats in the map",
+parser.add_argument("--line", help="displays trajectories as lines",
 					action="store_true")
-parser.add_argument("--dots", help="shows only the SOCCOM floats in the map",
+parser.add_argument("--dots", help="displays profiles as dots",
 					action="store_true")
-parser.add_argument("--box", help="shows only the SOCCOM floats in the map",
+parser.add_argument("--box", help="shows the surrounding box",
 					action="store_true")
+parser.add_argument('--years',
+                        action='store',
+                        nargs=1,
+                        type=float,
+                        help='Number of years to plot')
+
 
 
 
@@ -192,14 +199,23 @@ if not args.full_traj:
 	print('Only trajectories starting in the box are included in the plots')
 	frames = []
 	for df_holder in [df[df.Cruise==dummy] for dummy in df.Cruise.unique()]:
+		if df_holder.Cruise.isin(['BOX']).any():
+			frames.append(df_holder)
+			continue
 		index = df_holder[(df_holder.latitude>=lllat)&(df_holder.latitude<=urlat)&(df_holder.longitude<=urlon)&(df_holder.longitude>=lllon)].index.min()
 		df_holder = df_holder[df_holder.index>=index]
+		if args.years[0]>0:
+			change = datetime.timedelta(days = int(365*args.years[0]))
+			df_holder = df_holder[df_holder.date<(df_holder.date.min()+change)]
 		frames.append(df_holder)
 	df = pd.concat(frames)
 else:
 	print('Full trajectories are included in the plots')
+
+if args.years[0]:
+	print('Only trajectories '+str(args.years[0]) +' years from first entering box are included in the plots')
+
 df['longitude']=wrap_lon180(df['longitude'].values)
 urlon = wrap_lon180(urlon)[0]
 lllon = wrap_lon180(lllon)[0]
-print(df)
 plot_the_cruises(df)
