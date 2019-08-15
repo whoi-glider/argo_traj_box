@@ -25,6 +25,10 @@ parser.add_argument("--markers", help="shows the deployment and end transmission
 					action="store_true")
 parser.add_argument("--full_traj", help="shows the full trajectory of the float from deployment to last transmission",
 					action="store_true")
+parser.add_argument("--forward", help="shows the trajectory since float entered box",
+					action="store_true")
+parser.add_argument("--reverse", help="shows the trajectory before float entered box",
+					action="store_true")
 parser.add_argument("--SOCCOM", help="shows only the SOCCOM floats in the map",
 					action="store_true")
 parser.add_argument("--line", help="displays trajectories as lines",
@@ -165,6 +169,9 @@ except IOError:
 	print('No trajectory dataframe found, redownloading and recompiling trajectory dataframe')
 	df = download_meta_file_and_compile_df()
 
+
+print(args)
+
 lllon = args.lllon
 lllat = args.lllat
 urlon = args.urlon
@@ -195,7 +202,9 @@ if args.SOCCOM:
 	print('Only SOCCOM trajectories will be plotted')
 	df = df[df.SOCCOM==True]
 
-if not args.full_traj:
+if args.full_traj:
+	print('Full trajectories are included in the plots')
+elif args.forward:
 	print('Only trajectories starting in the box are included in the plots')
 	frames = []
 	for df_holder in [df[df.Cruise==dummy] for dummy in df.Cruise.unique()]:
@@ -209,8 +218,23 @@ if not args.full_traj:
 			df_holder = df_holder[df_holder.date<(df_holder.date.min()+change)]
 		frames.append(df_holder)
 	df = pd.concat(frames)
+elif args.reverse:
+	print('Only trajectories ending in the box are included in the plots')
+	frames = []
+	for df_holder in [df[df.Cruise==dummy] for dummy in df.Cruise.unique()]:
+		if df_holder.Cruise.isin(['BOX']).any():
+			frames.append(df_holder)
+			continue
+		index = df_holder[(df_holder.latitude>=lllat)&(df_holder.latitude<=urlat)&(df_holder.longitude<=urlon)&(df_holder.longitude>=lllon)].index.min()
+		df_holder = df_holder[df_holder.index<=index]
+		if args.years[0]>0:
+			change = datetime.timedelta(days = int(365*args.years[0]))
+			df_holder = df_holder[df_holder.date>(df_holder.date.max()-change)]
+		frames.append(df_holder)
+	df = pd.concat(frames)
 else:
-	print('Full trajectories are included in the plots')
+	print ('Must specify forward, reverse, or full flags')
+	raise
 
 if args.years[0]:
 	print('Only trajectories '+str(args.years[0]) +' years from first entering box are included in the plots')
