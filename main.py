@@ -9,6 +9,8 @@ from itertools import cycle
 import requests
 import json
 import datetime
+from netCDF4 import Dataset
+import pickle
 
 parser = argparse.ArgumentParser()
 parser.add_argument("lllon", help="lower left longitude of box to plot",
@@ -30,6 +32,10 @@ parser.add_argument("--forward", help="shows the trajectory since float entered 
 parser.add_argument("--reverse", help="shows the trajectory before float entered box",
 					action="store_true")
 parser.add_argument("--SOCCOM", help="shows only the SOCCOM floats in the map",
+					action="store_true")
+parser.add_argument("--iridium", help="shows only the IRIDIUM floats in the map",
+					action="store_true")
+parser.add_argument("--ARGOS", help="shows only the Argos floats in the map",
 					action="store_true")
 parser.add_argument("--line", help="displays trajectories as lines",
 					action="store_true")
@@ -131,16 +137,61 @@ def download_meta_file_and_compile_df():
 	wmoID_list = df_list[-1]['TrajdataWMOID'].values
 	wmoID_list = [str(dummy) for dummy in wmoID_list]
 
-	link = 'usgodae.org'
-	ftp = FTP(link) 
-	ftp.login()
-	ftp.cwd('pub/outgoing/argo')
-	filename = 'ar_index_global_prof.txt'
-	file = open(filename, 'wb')
-	ftp.retrbinary('RETR %s' % filename,file.write,8*1024)
-	file.close()
-	ftp.close()
-	df_ = pd.read_csv(filename,skiprows=8)
+	def ftp_download(server_path,dummy=True):
+		try:
+			link = 'usgodae.org'
+			ftp = FTP(link) 
+			ftp.login()		
+			filename = os.path.basename(server_path)
+			relative_change = os.path.relpath(os.path.dirname(server_path),ftp.pwd())
+			ftp.cwd(relative_change)
+			if dummy:
+				file = open('dummy','wb')
+			else:
+				file = open(filename, 'wb')
+			ftp.retrbinary('RETR %s' % filename,file.write,8*1024)
+			file.close()
+			ftp.close()
+		except TimeoutError:
+			ftp_download(server_path,dummy=dummy)
+
+	global_prof_filename = '/pub/outgoing/argo/ar_index_global_prof.txt'
+	global_meta_filename = '/pub/outgoing/argo/ar_index_global_meta.txt'
+
+	ftp_download(global_prof_filename,dummy=False)
+	ftp_download(global_meta_filename,dummy=False)
+
+	df_ = pd.read_csv(global_meta_filename.split('/')[-1],skiprows=8)
+	df_['wmo_id']=[_[1].split('/')[1] for _ in df_.file.iteritems()]
+	with open('position_system_list','rb') as fp:
+		position_system_list = pickle.load(fp)
+	wmo_list, position_list = zip(*position_system_list)
+	df_query = df_[~df_['wmo_id'].isin(wmo_list)]
+	for k,token in enumerate(df_query['file'].iteritems()):
+		print('Hi Susan, im working on file '+str(k)+' of '+str(len(df_)))
+		file = '/pub/outgoing/argo/dac/' + token[1]
+		ftp_download(file)
+		ncfid = Dataset('dummy')
+		float_id = ncfid.variables['PLATFORM_NUMBER'][:]
+		try:
+			float_id = ''.join([_.decode("utf-8") for _ in float_id.data[~float_id.mask].tolist()])
+		except AttributeError:
+			float_id = ''.join([_.decode("utf-8") for _ in float_id.data[~float_id.mask].tolist()[0]])
+
+		pos_system = ncfid.variables['POSITIONING_SYSTEM'][:]
+		try:
+			pos_system = ''.join([_.decode("utf-8") for _ in pos_system.data[~pos_system.mask].tolist()])
+		except AttributeError:
+			pos_system = ''.join([_.decode("utf-8") for _ in pos_system.data[~pos_system.mask].tolist()[0]])
+
+		position_system_list.append((float_id,pos_system))
+		if (token[0]%100)==0:
+			with open('position_system_list', 'wb') as fp:
+			    pickle.dump(position_system_list, fp)
+	with open('position_system_list', 'wb') as fp:
+	    pickle.dump(position_system_list, fp)
+	position_type_dict = dict(position_system_list)
+	df_ = pd.read_csv(os.path.basename(global_prof_filename),skiprows=8)
 	df_ = df_.dropna(subset=['date'])
 	df_['date'] = [int(_) for _ in df_.date.values]
 	df_['date'] = pd.to_datetime(df_.date,format='%Y%m%d%H%M%S')
@@ -151,6 +202,13 @@ def download_meta_file_and_compile_df():
 	df_ = df_[df_.longitude!=-999]
 	df_ = df_[df_.longitude<=180]
 	df_['SOCCOM'] = df_.Cruise.isin(wmoID_list)
+	df_['Position Type']=[position_type_dict[_[1]] for _ in df_.Cruise.iteritems()]		
+	df_.loc[df_['Position Type']=='IRIDIUM','Position Type']='GPS'
+	df_.loc[df_['Position Type']=='GPSIRIDIUM','Position Type']='GPS'
+	df_.loc[df_['Position Type']=='IRIDIUMGPS','Position Type']='GPS'
+	df_.loc[df_['Position Type']=='GTS','Position Type']='GPS'
+	df_.loc[df_['Position Type']=='ARGOS','Position Type']='ARGOS'
+	df_ = df_[df_['Position Type'].isin(['GPS','ARGOS'])]
 	assert df_.longitude.min()>-180
 	assert df_.longitude.max()<=180
 	assert df_.latitude.min()>-90
@@ -202,6 +260,14 @@ if args.SOCCOM:
 	print('Only SOCCOM trajectories will be plotted')
 	df = df[df.SOCCOM==True]
 
+if args.iridium:
+	print('Only IRIDIUM trajectories will be plotted')
+	df = df[df['Position Type']=='GPS']
+
+if args.ARGOS:
+	print('Only argos trajectories will be plotted')
+	df = df[df['Position Type']=='ARGOS']
+
 if args.full_traj:
 	print('Full trajectories are included in the plots')
 elif args.forward:
@@ -213,7 +279,7 @@ elif args.forward:
 			continue
 		index = df_holder[(df_holder.latitude>=lllat)&(df_holder.latitude<=urlat)&(df_holder.longitude<=urlon)&(df_holder.longitude>=lllon)].index.min()
 		df_holder = df_holder[df_holder.index>=index]
-		if args.years[0]>0:
+		if args.years:
 			change = datetime.timedelta(days = int(365*args.years[0]))
 			df_holder = df_holder[df_holder.date<(df_holder.date.min()+change)]
 		frames.append(df_holder)
@@ -236,7 +302,7 @@ else:
 	print ('Must specify forward, reverse, or full flags')
 	raise
 
-if args.years[0]:
+if args.years:
 	print('Only trajectories '+str(args.years[0]) +' years from first entering box are included in the plots')
 
 df['longitude']=wrap_lon180(df['longitude'].values)
