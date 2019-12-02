@@ -39,7 +39,7 @@ def map_particle_plot(dataframe):
 		else:
 			dataframe_plot(token,m)
 
-sose_df_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/sose_particle_df.pickle'
+sose_df_file = 'traj_df.pickle'
 sose_df = pd.read_pickle(sose_df_file)
 sose_df['latitude'] = sose_df['Lat']
 sose_df['longitude'] = sose_df['Lon']

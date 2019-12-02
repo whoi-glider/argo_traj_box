@@ -1,6 +1,6 @@
 import os
 import pandas as pd
-from ftplib import FTP 
+from ftplib import FTP
 import argparse
 import folium
 import folium.plugins
@@ -126,13 +126,13 @@ def plot_the_cruises(df_):
 
 def download_meta_file_and_compile_df():
 	url = 'http://soccom.ucsd.edu/floats/SOCCOM_float_stats.html'
-	html = requests.get(url).content  
-	df_list = pd.read_html(html) 
+	html = requests.get(url).content
+	df_list = pd.read_html(html)
 	wmoID_list = df_list[-1]['TrajdataWMOID'].values
 	wmoID_list = [str(dummy) for dummy in wmoID_list]
 
 	link = 'usgodae.org'
-	ftp = FTP(link) 
+	ftp = FTP(link)
 	ftp.login()
 	ftp.cwd('pub/outgoing/argo')
 	filename = 'ar_index_global_prof.txt'
